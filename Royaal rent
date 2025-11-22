@@ -1,0 +1,8 @@
+daily-rentals/
+  pages/
+    api/
+    listing/
+  components/
+  data/
+  styles/
+  package.json
