@@ -1,8 +1,206 @@
-daily-rentals/
-  pages/
-    api/
-    listing/
-  components/
-  data/
-  styles/
-  package.json
+{
+  "name": "daily-rentals",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "13.5.5",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "nanoid": "^4.0.0"
+  }
+}
+/pages
+  /api
+    listings.js
+    book.js
+  index.js
+  /listing
+    [id].js
+/components
+  ListingCard.js
+/data
+  listings.json
+  bookings.json
+/styles
+  globals.css
+[
+  {
+    "id": "a1",
+    "title": "آپارتمان نقلی در مرکز شهر",
+    "pricePerNight": 35,
+    "location": "Tehran",
+    "images": ["/images/apt1-1.jpg","/images/apt1-2.jpg"],
+    "description": "آپارتمان تمیز و نزدیک مترو. مناسب برای اقامت کوتاه."
+  },
+  {
+    "id": "b2",
+    "title": "استودیو دنج با آشپزخانه",
+    "pricePerNight": 28,
+    "location": "Tehran",
+    "images": ["/images/studio1.jpg"],
+    "description": "استودیو مناسب یک یا دو نفر. اینترنت پرسرعت."
+  }
+]
+[]
+// pages/api/listings.js
+import fs from "fs";
+import path from "path";
+
+export default function handler(req, res) {
+  const file = path.join(process.cwd(), "data", "listings.json");
+  const json = fs.readFileSync(file, "utf8");
+  const listings = JSON.parse(json);
+  res.status(200).json({ success: true, listings });
+}
+// pages/api/listings.js
+import fs from "fs";
+import path from "path";
+
+export default function handler(req, res) {
+  const file = path.join(process.cwd(), "data", "listings.json");
+  const json = fs.readFileSync(file, "utf8");
+  const listings = JSON.parse(json);
+  res.status(200).json({ success: true, listings });
+}
+// pages/api/book.js
+import fs from "fs";
+import path from "path";
+import { nanoid } from "nanoid";
+
+export default function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ success: false, message: "Method not allowed" });
+
+  const { listingId, name, phone, fromDate, toDate, totalPrice } = req.body;
+  if (!listingId || !name || !fromDate || !toDate) {
+    return res.status(400).json({ success: false, message: "missing fields" });
+  }
+
+  const bookingsPath = path.join(process.cwd(), "data", "bookings.json");
+  const bookingsRaw = fs.readFileSync(bookingsPath, "utf8");
+  const bookings = JSON.parse(bookingsRaw);
+
+  const newBooking = {
+    id: nanoid(),
+    listingId,
+    name,
+    phone: phone || null,
+    fromDate,
+    toDate,
+    totalPrice: totalPrice || null,
+    createdAt: new Date().toISOString()
+  };
+
+  bookings.push(newBooking);
+  fs.writeFileSync(bookingsPath, JSON.stringify(bookings, null, 2), "utf8");
+
+  res.status(201).json({ success: true, booking: newBooking });
+}
+// components/ListingCard.js
+import Link from "next/link";
+
+export default function ListingCard({ item }) {
+  return (
+    <div className="card">
+      <img src={item.images?.[0] || "/images/placeholder.png"} alt={item.title} style={{width:"100%", height:180, objectFit:"cover"}} />
+      <div style={{padding:12}}>
+        <h3>{item.title}</h3>
+        <p>{item.location} — ${item.pricePerNight}/night</p>
+        <Link href={`/listing/${item.id}`}><a className="btn">مشاهده و رزرو</a></Link>
+      </div>
+    </div>
+  );
+}
+// pages/index.js
+import { useEffect, useState } from "react";
+import ListingCard from "../components/ListingCard";
+
+export default function Home() {
+  const [listings, setListings] = useState([]);
+
+  useEffect(() => {
+    fetch("/api/listings")
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) setListings(data.listings);
+      });
+  }, []);
+
+  return (
+    <div style={{maxWidth:1000, margin:"0 auto", padding:20}}>
+      <h1>اجاره روزانه</h1>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(260px,1fr))", gap:16}}>
+        {listings.map(l => <ListingCard key={l.id} item={l} />)}
+      </div>
+    </div>
+  );
+}
+// pages/listing/[id].js
+import { useRouter } from "next/router";
+import { useEffect, useState } from "react";
+
+export default function ListingPage() {
+  const router = useRouter();
+  const { id } = router.query;
+  const [listing, setListing] = useState(null);
+  const [form, setForm] = useState({ name: "", phone: "", fromDate: "", toDate: "" });
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    if (!id) return;
+    fetch("/api/listings")
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          const found = d.listings.find(x => x.id === id);
+          setListing(found || null);
+        }
+      });
+  }, [id]);
+
+  if (!listing) return <div style={{padding:20}}>در حال بارگذاری...</div>;
+
+  const handleChange = e => setForm({...form, [e.target.name]: e.target.value });
+
+  const submit = async e => {
+    e.preventDefault();
+    setMsg("درحال ارسال...");
+    const body = { listingId: listing.id, name: form.name, phone: form.phone, fromDate: form.fromDate, toDate: form.toDate };
+    const res = await fetch("/api/book", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (data.success) {
+      setMsg("رزرو ثبت شد! شماره رزرو: " + data.booking.id);
+      setForm({ name: "", phone: "", fromDate: "", toDate: "" });
+    } else setMsg("خطا: " + (data.message || "نامعلوم"));
+  };
+
+  return (
+    <div style={{maxWidth:800, margin:"0 auto", padding:20}}>
+      <h2>{listing.title}</h2>
+      <p>{listing.location} — ${listing.pricePerNight}/night</p>
+      <p>{listing.description}</p>
+
+      <hr />
+      <h3>رزرو</h3>
+      <form onSubmit={submit} style={{display:"grid", gap:8}}>
+        <input name="name" placeholder="نام" value={form.name} onChange={handleChange} required />
+        <input name="phone" placeholder="تلفن (اختیاری)" value={form.phone} onChange={handleChange} />
+        <label>از تاریخ</label>
+        <input name="fromDate" type="date" value={form.fromDate} onChange={handleChange} required />
+        <label>تا تاریخ</label>
+        <input name="toDate" type="date" value={form.toDate} onChange={handleChange} required />
+        <button type="submit">ثبت رزرو</button>
+      </form>
+      <p>{msg}</p>
+    </div>
+  );
+}
+body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f9f9f9; color:#222; }
+.card { background:#fff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.06); overflow:hidden; }
+.btn { display:inline-block; margin-top:8px; padding:8px 12px; background:#2b6cb0; color:#fff; border-radius:6px; text-decoration:none; }
+input, button { padding:8px; border-radius:6px; border:1px solid #ddd; }
+button { cursor:pointer; background:#2b6cb0; color:#fff; border:none; }
+
